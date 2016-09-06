@@ -1,0 +1,9 @@
+[package]
+name = "winlayer"
+version = "0.1.0"
+authors = ["JohnBork <borkin8r@github-noreply.com>"]
+
+[dependencies]
+winapi = "0.2.8"
+user32-sys = "0.2.0"
+kernel32-sys = "0.2.2"
