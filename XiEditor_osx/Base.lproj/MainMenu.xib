@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="UTF-8" standalone="no"?>
-<document type="com.apple.InterfaceBuilder3.Cocoa.XIB" version="3.0" toolsVersion="9531" systemVersion="15D21" targetRuntime="MacOSX.Cocoa" propertyAccessControl="none" useAutolayout="YES" customObjectInstantitationMethod="direct">
+<document type="com.apple.InterfaceBuilder3.Cocoa.XIB" version="3.0" toolsVersion="10117" systemVersion="15F34" targetRuntime="MacOSX.Cocoa" propertyAccessControl="none" useAutolayout="YES" customObjectInstantitationMethod="direct">
     <dependencies>
         <deployment identifier="macosx"/>
-        <plugIn identifier="com.apple.InterfaceBuilder.CocoaPlugin" version="9531"/>
+        <plugIn identifier="com.apple.InterfaceBuilder.CocoaPlugin" version="10117"/>
     </dependencies>
     <objects>
         <customObject id="-2" userLabel="File's Owner" customClass="NSApplication">
@@ -353,7 +353,7 @@
                                     <items>
                                         <menuItem title="Show Fonts" keyEquivalent="t" id="Q5e-8K-NDq">
                                             <connections>
-                                                <action selector="orderFrontFontPanel:" target="YLy-65-1bz" id="WHr-nq-2xA"/>
+                                                <action selector="orderFrontFontPanel:" target="-1" id="afu-NV-5cp"/>
                                             </connections>
                                         </menuItem>
                                         <menuItem title="Bold" tag="2" keyEquivalent="b" id="GB9-OM-e27">
@@ -644,6 +644,31 @@
                                 <modifierMask key="keyEquivalentModifierMask"/>
                                 <connections>
                                     <action selector="arrangeInFront:" target="-1" id="DRN-fu-gQh"/>
+                                </connections>
+                            </menuItem>
+                        </items>
+                    </menu>
+                </menuItem>
+                <menuItem title="Debug" id="r1r-EE-uzA" userLabel="Debug">
+                    <modifierMask key="keyEquivalentModifierMask"/>
+                    <menu key="submenu" title="Debug" id="V9K-nn-2xz">
+                        <items>
+                            <menuItem title="Rewrap" keyEquivalent="" id="eyx-NK-xxg">
+                                <modifierMask key="keyEquivalentModifierMask"/>
+                                <connections>
+                                    <action selector="debugRewrap:" target="-1" id="dy7-FU-Aiv"/>
+                                </connections>
+                            </menuItem>
+                            <menuItem title="Test FG Spans" keyEquivalent="" id="cXj-fm-1i4">
+                                <modifierMask key="keyEquivalentModifierMask"/>
+                                <connections>
+                                    <action selector="debugTestFGSpans:" target="-1" id="wUs-m9-mvu"/>
+                                </connections>
+                            </menuItem>
+                            <menuItem title="Run Plugin" keyEquivalent="" id="JP0-nR-HW5">
+                                <modifierMask key="keyEquivalentModifierMask"/>
+                                <connections>
+                                    <action selector="debugRunPlugin:" target="-1" id="yde-il-ldp"/>
                                 </connections>
                             </menuItem>
                         </items>

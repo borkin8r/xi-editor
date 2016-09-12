@@ -1,4 +1,4 @@
-/// Copyright 2016 Google Inc. All rights reserved.
+// Copyright 2016 Google Inc. All rights reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -12,63 +12,88 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+extern crate serde;
 extern crate serde_json;
 extern crate time;
 
 use std::io;
-use std::io::{Read, Write};
+
 use serde_json::Value;
 
 #[macro_use]
 mod macros;
 
+mod tabs;
 mod editor;
 mod view;
 mod linewrap;
+mod rpc;
+mod run_plugin;
 
-use editor::Editor;
-use std::io::Error;
+use tabs::Tabs;
+use rpc::Request;
 
 extern crate xi_rope;
 extern crate xi_unicode;
+extern crate xi_rpc;
 
-pub fn send(v: &Value) -> Result<(), Error> {
-    let mut s = serde_json::to_string(v).unwrap();
-    s.push('\n');
-    //print_err!("from core: {}", s);
-    let size = s.len();
-    let mut sizebuf = [0; 8];
-    for (i, item) in sizebuf.iter_mut().enumerate() {
-        *item = (((size as u64) >> (i * 8)) & 0xff) as u8;
-    }
-    let stdout = io::stdout();
-    let mut stdout_handle = stdout.lock();
-    if let Err(e) = stdout_handle.write_all(&sizebuf) {
-        return Err(e);
-    }
-    stdout_handle.write_all(s.as_bytes())
-    // flush is not needed because of the LineWriter on stdout
-    //let _ = stdout_handle.flush();
+use xi_rpc::{RpcLoop, RpcPeer, RpcCtx, Handler};
+
+type W = io::Stdout;
+pub type MainPeer = RpcPeer<io::Stdout>;
+
+struct MainState {
+    tabs: Tabs,
 }
 
-fn main() {
-    let stdin = io::stdin();
-    let mut stdin_handle = stdin.lock();
-    let mut sizebuf = [0; 8];
-    let mut editor = Editor::new();
-    while stdin_handle.read_exact(&mut sizebuf).is_ok() {
-        // byteorder would be more direct
-        let size = sizebuf.iter().enumerate().fold(0, |s, (i, &b)| s + ((b as u64) << (i * 8)));
-        let mut buf = vec![0; size as usize];
-        if stdin_handle.read_exact(&mut buf).is_ok() {
-            if let Ok(data) = serde_json::from_slice::<Value>(&buf) {
-                print_err!("to core: {:?}", data);
-                if let Some(array) = data.as_array() {
-                    if let Some(cmd) = array[0].as_string() {
-                        editor.do_cmd(cmd, &array[1]);
-                    }
-                }
+impl MainState {
+    fn new() -> Self {
+        MainState {
+            tabs: Tabs::new(),
+        }
+    }
+}
+
+impl Handler<W> for MainState {
+    fn handle_notification(&mut self, ctx: RpcCtx<W>, method: &str, params: &Value) {
+        match Request::from_json(method, params) {
+            Ok(req) => {
+                let _ = self.handle_req(req, ctx.get_peer());
+                // TODO: should check None
+            }
+            Err(e) => print_err!("Error {} decoding RPC request {}", e, method)
+        }
+    }
+
+    fn handle_request(&mut self, ctx: RpcCtx<W>, method: &str, params: &Value) ->
+        Result<Value, Value> {
+        match Request::from_json(method, params) {
+            Ok(req) => {
+                let result = self.handle_req(req, ctx.get_peer());
+                result.ok_or_else(|| Value::String("return value missing".to_string()))
+            }
+            Err(e) => {
+                print_err!("Error {} decoding RPC request {}", e, method);
+                Err(Value::String("error decoding request".to_string()))
             }
         }
     }
+}
+
+impl MainState {
+    fn handle_req(&mut self, request: Request, rpc_peer: &MainPeer) ->
+        Option<Value> {
+        match request {
+            Request::TabCommand { tab_command } => self.tabs.do_rpc(tab_command, rpc_peer)
+        }
+    }
+}
+
+fn main() {
+    let mut state = MainState::new();
+    let stdin = io::stdin();
+    let stdout = io::stdout();
+    let mut rpc_looper = RpcLoop::new(stdout);
+
+    rpc_looper.mainloop(|| stdin.lock(), &mut state);
 }

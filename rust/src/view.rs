@@ -15,7 +15,7 @@
 use std::cmp::{min,max};
 
 use serde_json::Value;
-use serde_json::builder::ArrayBuilder;
+use serde_json::builder::{ArrayBuilder,ObjectBuilder};
 
 use xi_rope::rope::{Rope, LinesMetric, RopeInfo};
 use xi_rope::delta::{Delta};
@@ -28,13 +28,19 @@ use linewrap;
 
 const SCROLL_SLOP: usize = 2;
 
+#[derive(Default, Clone)]
+pub struct Style {
+    pub fg: u32,
+    pub font_style: u8,  // same as syntect, 1 = bold, 2 = underline, 4 = italic
+}
+
 pub struct View {
     pub sel_start: usize,
     pub sel_end: usize,
     first_line: usize,  // vertical scroll position
     height: usize,  // height of visible portion
     breaks: Option<Breaks>,
-    fg_spans: Spans<u32>,
+    style_spans: Spans<Style>,
     cols: usize,
 }
 
@@ -46,7 +52,7 @@ impl Default for View {
             first_line: 0,
             height: 10,
             breaks: None,
-            fg_spans: Spans::default(),
+            style_spans: Spans::default(),
             cols: 0,
         }
     }
@@ -119,9 +125,6 @@ impl View {
             let pos = match pos {
                 Some(pos) => pos,
                 None => {
-                    if start_pos == text.len() {
-                        break;
-                    }
                     is_last_line = true;
                     text.len()
                 }
@@ -147,37 +150,31 @@ impl View {
                     builder.push("sel")
                         .push(sel_start_ix)
                         .push(sel_end_ix)
-                );                
+                );
             }
             if line_num == cursor_line {
                 line_builder = line_builder.push_array(|builder|
                     builder.push("cursor")
                         .push(cursor_col)
                 );
-            }
-            builder = builder.push(line_builder.unwrap());
+            }            builder = builder.push(line_builder.build());
             line_num += 1;
             if is_last_line || line_num == last_line {
                 break;
             }
         }
-        if line_num == cursor_line {
-            builder = builder.push_array(|builder|
-                builder.push("")
-                    .push_array(|builder|
-                        builder.push("cursor").push(0)));
-        }
-        builder.unwrap()
+        builder.build()
     }
 
     pub fn render_spans(&self, mut builder: ArrayBuilder, start: usize, end: usize) -> ArrayBuilder {
-        let fg_spans = self.fg_spans.subseq(Interval::new_closed_open(start, end));
-        for (iv, fg) in fg_spans.iter() {
+        let style_spans = self.style_spans.subseq(Interval::new_closed_open(start, end));
+        for (iv, style) in style_spans.iter() {
             builder = builder.push_array(|builder|
                 builder.push("fg")
                     .push(iv.start())
                     .push(iv.end())
-                    .push(fg));
+                    .push(style.fg)
+                    .push(style.font_style));
         }
         builder
     }
@@ -187,21 +184,16 @@ impl View {
         let last_line = self.first_line + self.height + SCROLL_SLOP;
         let lines = self.render_lines(text, first_line, last_line);
         let height = self.offset_to_line_col(text, text.len()).0 + 1;
-        ArrayBuilder::new()
-            .push("settext")
-            .push_object(|builder| {
-                let mut builder = builder
-                    .insert("lines", lines)
-                    .insert("first_line", first_line)
-                    .insert("height", height);
-                if let Some(scrollto) = scroll_to {
-                    let (line, col) = self.offset_to_line_col(text, scrollto);
-                    builder = builder.insert_array("scrollto", |builder|
-                        builder.push(line).push(col));
-                }
-                builder
-            })
-            .unwrap()
+        let mut builder = ObjectBuilder::new()
+            .insert("lines", lines)
+            .insert("first_line", first_line)
+            .insert("height", height);
+        if let Some(scrollto) = scroll_to {
+            let (line, col) = self.offset_to_line_col(text, scrollto);
+            builder = builder.insert_array("scrollto", |builder|
+                builder.push(line).push(col));
+        }
+        builder.build()
     }
 
     // How should we count "column"? Valid choices include:
@@ -223,25 +215,20 @@ impl View {
         let mut offset = self.offset_of_line(text, line).saturating_add(col);
         if offset >= text.len() {
             offset = text.len();
-            if self.line_of_offset(text, offset) == line {
+            if self.line_of_offset(text, offset) <= line {
                 return offset;
             }
         } else {
-            // Snap to codepoint boundary
-            offset = text.prev_codepoint_offset(offset + 1).unwrap();
+            // Snap to grapheme cluster boundary
+            offset = text.prev_grapheme_offset(offset + 1).unwrap();
         }
 
         // clamp to end of line
         let next_line_offset = self.offset_of_line(text, line + 1);
         if offset >= next_line_offset {
-            offset = next_line_offset;
-            // TODO: replace with cursor
-            if text.byte_at(offset - 1) == b'\n' {
-                offset -= 1;
+            if let Some(prev) = text.prev_grapheme_offset(next_line_offset) {
+                offset = prev;
             }
-        }
-        if offset > 0 && text.byte_at(offset - 1) == b'\r' {
-            offset -= 1;
         }
         offset
     }
@@ -273,9 +260,7 @@ impl View {
     fn line_of_offset(&self, text: &Rope, offset: usize) -> usize {
         match self.breaks {
             Some(ref breaks) => {
-                let line = breaks.convert_metrics::<BreaksBaseMetric, BreaksMetric>(offset);
-                //print_err!("line_of_offset({}) = {}", offset, line);
-                line
+                breaks.convert_metrics::<BreaksBaseMetric, BreaksMetric>(offset)
             }
             None => text.line_of_offset(offset)
         }
@@ -295,20 +280,30 @@ impl View {
         self.cols = cols;
     }
 
-    pub fn before_edit(&mut self, _text: &Rope, _delta: &Delta<RopeInfo>) {
-
-    }
-
     pub fn after_edit(&mut self, text: &Rope, delta: &Delta<RopeInfo>) {
-        let cols = self.cols;
-        if self.breaks.is_some() {
-            if delta.len() == 1 {
-                let item = delta.iter().next().unwrap();
-                linewrap::rewrap(self.breaks.as_mut().unwrap(), text, item.interval, item.rope.len(), cols);
+        let (iv, new_len) = delta.summary();
+        // Note: this logic almost replaces setting the cursor in Editor::commit_delta,
+        // but doesn't set col or scroll to the cursor. It could be extended to subsume
+        // that entirely.
+        // Also note: for committing plugin edits, we probably want to know the priority
+        // of the delta so we can set the cursor before or after the edit, as needed.
+        if self.sel_end >= iv.start() {
+            if self.sel_end >= iv.end() {
+                self.sel_end = self.sel_end - iv.size() + new_len;
             } else {
-                self.rewrap(text, cols);
+                self.sel_end = iv.start() + new_len;
             }
         }
+        self.sel_start = self.sel_end;
+        if self.breaks.is_some() {
+            linewrap::rewrap(self.breaks.as_mut().unwrap(), text, iv, new_len, self.cols);
+        }
+        // TODO: maybe more precise editing based on actual delta rather than summary.
+        // TODO: perhaps use different semantics for spans that enclose the edited region.
+        // Currently it breaks any such span in half and applies no spans to the inserted
+        // text. That's ok for syntax highlighting but not ideal for rich text.
+        let empty_spans = SpansBuilder::new(new_len).build();
+        self.style_spans.edit(iv, empty_spans);
     }
 
     pub fn reset_breaks(&mut self) {
@@ -317,7 +312,12 @@ impl View {
 
     pub fn set_test_fg_spans(&mut self) {
         let mut sb = SpansBuilder::new(15);
-        sb.add_span(Interval::new_closed_open(5, 10), 0xffc00000);
-        self.fg_spans = sb.build();
+        let style = Style { fg: 0xffc00000, font_style: 0 };
+        sb.add_span(Interval::new_closed_open(5, 10), style);
+        self.style_spans = sb.build();
+    }
+
+    pub fn set_fg_spans(&mut self, start: usize, end: usize, spans: Spans<Style>) {
+        self.style_spans.edit(Interval::new_closed_closed(start, end), spans);
     }
 }

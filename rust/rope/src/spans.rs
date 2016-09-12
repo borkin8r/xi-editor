@@ -20,6 +20,7 @@ use std::marker::PhantomData;
 use std::mem;
 
 use tree::{Leaf, Node, NodeInfo, TreeBuilder, Cursor};
+use delta::Transformer;
 use interval::Interval;
 
 const MIN_LEAF: usize = 32;
@@ -57,7 +58,7 @@ impl<T: Clone + Default> Leaf for SpansLeaf<T> {
 
     fn push_maybe_split(&mut self, other: &Self, iv: Interval) -> Option<Self> {
         let iv_start = iv.start();
-        for span in other.spans.iter() {
+        for span in &other.spans {
             let span_iv = span.iv.intersect(iv).translate_neg(iv_start).translate(self.len);
             if !span_iv.is_empty() {
                 self.spans.push(Span {
@@ -74,7 +75,7 @@ impl<T: Clone + Default> Leaf for SpansLeaf<T> {
             let splitpoint = self.spans.len() / 2;  // number of spans
             let splitpoint_units = self.spans[splitpoint].iv.start();
             let mut new = self.spans.split_off(splitpoint);
-            for span in new.iter_mut() {
+            for span in &mut new {
                 span.iv = span.iv.translate_neg(splitpoint_units);
             }
             let new_len = self.len - splitpoint_units;
@@ -97,7 +98,7 @@ impl<T: Clone + Default> NodeInfo for SpansInfo<T> {
 
     fn compute_info(l: &SpansLeaf<T>) -> Self {
         let mut iv = Interval::new_closed_open(0, 0);  // should be Interval::default?
-        for span in l.spans.iter() {
+        for span in &l.spans {
             iv = iv.union(span.iv);
         }
         SpansInfo {
@@ -155,6 +156,31 @@ pub struct SpanIter<'a, T: 'a + Clone + Default> {
 }
 
 impl<T: Clone + Default> Spans<T> {
+    /// Perform operational transformation on a spans object intended to be edited into
+    /// a sequence at the given offset.
+
+    // Note: this implementation is not efficient for very large Spans objects, as it
+    // traverses all spans linearly. A more sophisticated approach would be to traverse
+    // the tree, and only delve into subtrees that are transformed.
+    pub fn transform<N: NodeInfo>(&self, base_start: usize, base_end: usize,
+            xform: &mut Transformer<N>) -> Self {
+        // TODO: maybe should take base as an Interval and figure out "after" from that
+        let new_start = xform.transform(base_start, false);
+        let new_end = xform.transform(base_end, true);
+        let mut builder = SpansBuilder::new(new_end - new_start);
+        for (iv, data) in self.iter() {
+            let (start_closed, end_closed) = (iv.is_start_closed(), iv.is_end_closed());
+            let start = xform.transform(iv.start() + base_start, !start_closed) - new_start;
+            let end = xform.transform(iv.end() + base_start, end_closed) - new_start;
+            if start < end || (start_closed && end_closed) {
+                let iv = Interval::new(start, start_closed, end, end_closed);
+                // TODO: could imagine using a move iterator and avoiding clone, but it's not easy.
+                builder.add_span(iv, data.clone());
+            }
+        }
+        builder.build()
+    }
+
     // possible future: an iterator that takes an interval, so results are the same as
     // taking a subseq on the spans object. Would require specialized Cursor.
     pub fn iter(&self) -> SpanIter<T> {
