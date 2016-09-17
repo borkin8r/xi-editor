@@ -5,11 +5,18 @@
 
 LRESULT CALLBACK WindowCallback(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam);
 
+/////////////////////
+// Globals
+static PROCESS_INFORMATION coreProcInfo;
+static HANDLE coreInputWriteEnd = NULL;
+static HANDLE coreInputReadEnd = NULL;
+static HANDLE coreOutputWriteEnd = NULL;
+static HANDLE coreOutputReadEnd = NULL;
+static STARTUPINFO startInfo;
+
 int CALLBACK
-WinMain(HINSTANCE instance,
-HINSTANCE prevInstance,
-LPTSTR    commandLine,
-int       cmdShow)
+WinMain(HINSTANCE instance, HINSTANCE prevInstance,
+		LPTSTR    commandLine, int       cmdShow)
 {
 	///////////////////////////////
 	// Register the window class.
@@ -46,12 +53,12 @@ int       cmdShow)
 		//Setup connection to Xi-Core
 
 		//TODO: zero memory?
-		PROCESS_INFORMATION procInfo = { 0 };
-		STARTUPINFO startInfo = { 0 };
-		HANDLE coreInputWriteEnd = NULL;
-		HANDLE coreInputReadEnd = NULL;
-		HANDLE coreOutputWriteEnd = NULL;
-		HANDLE coreOutputReadEnd = NULL;
+		coreProcInfo = { 0 };
+		startInfo = { 0 };
+		coreInputWriteEnd = NULL;
+		coreInputReadEnd = NULL;
+		coreOutputWriteEnd = NULL;
+		coreOutputReadEnd = NULL;
 		SECURITY_ATTRIBUTES securityAttributes;
 
 		securityAttributes.nLength = sizeof(SECURITY_ATTRIBUTES);
@@ -71,7 +78,7 @@ int       cmdShow)
 			return -1;
 		}
 
-		if (!CreatePipe(&coreInputReadEnd, &coreInputWriteEnd, &securityAttributes, 0))
+		if (!CreatePipe(&coreInputReadEnd, &coreInputWriteEnd, &securityAttributes, 0)) 
 		{
 			OutputDebugStringA("failed to create input pipe\n");
 			return -1;
@@ -83,6 +90,11 @@ int       cmdShow)
 			return -1;
 		}
 
+		unsigned long flags = 0;
+
+		GetHandleInformation(coreInputWriteEnd, &flags);
+		OutputDebugStringA("debug\n");
+
 		startInfo.cb = sizeof(STARTUPINFO);
 		startInfo.hStdError = coreOutputWriteEnd;
 		startInfo.hStdOutput = coreOutputWriteEnd;
@@ -93,52 +105,70 @@ int       cmdShow)
 		// create core connection
 
 		BOOL coreProcessStarted = FALSE;
+		//TCHAR NPath[MAX_PATH];
+		//GetCurrentDirectory(MAX_PATH, NPath);
+
+		//DWORD dwAttrib = GetFileAttributes("..\\..\\rust\\target\\debug\\xi-core.exe");
 
 		coreProcessStarted = CreateProcess(
-			NULL,		   //path to executable "xi-core",
-			"dir",		   // command line arguements
+			"..\\..\\rust\\target\\debug\\xi-core.exe",		   // path to executable "xi-core",
+			NULL,		   // command line arguements
 			NULL,          // process security attributes 
 			NULL,          // primary thread security attributes 
 			TRUE,          // handles are inherited 
-			0,             // creation flags 
+			CREATE_NO_WINDOW,             // creation flags 
 			NULL,          // use parent's environment 
 			NULL,          // use parent's current directory 
 			&startInfo,    // STARTUPINFO pointer 
-			&procInfo);    // receives PROCESS_INFORMATION
+			&coreProcInfo);    // receives PROCESS_INFORMATION
 
 		if (!coreProcessStarted) {
 			DWORD error = GetLastError();
 			OutputDebugStringA("failed to create core connection\n");
 			return -2;
 		}
+		char uiMessage[256] = "{\"id\":0, \"method\": \"new_tab\",\"params\":[]}";
+		DWORD uiMessageSize = sizeof(uiMessage);
+		DWORD uiBytesWritten = 0;
+
+		if (WriteFile(coreInputWriteEnd, uiMessage, strlen(uiMessage), &uiBytesWritten, NULL) == 0) {
+			DWORD e = GetLastError();
+		}
+
+		CloseHandle(coreInputWriteEnd);
+
+		char coreMessage[256] = "";
+		DWORD coreMessageSize = sizeof(uiMessage);
+		DWORD coreBytesRead = 0;
+
+		ReadFile(coreOutputReadEnd, coreMessage, sizeof(coreMessage) - 1, &coreBytesRead, NULL);
 
 		//remove if handles to process and primary thread are needed
-		CloseHandle(procInfo.hProcess);
-		CloseHandle(procInfo.hThread);
+		//CloseHandle(coreProcInfo.hProcess);
+		//CloseHandle(coreProcInfo.hThread);
+
+
 
 		///////////////////////////
 		// Run the message loop.
 
-		MSG msg = {};
-		while (GetMessage(&msg, NULL, 0, 0))
+		MSG message = {};
+		while (GetMessage(&message, NULL, 0, 0))
 		{
-			TranslateMessage(&msg);
-			DispatchMessage(&msg);
+			TranslateMessage(&message);
+			DispatchMessage(&message);
 		}
-		return 0;
+
+		ExitProcess(0);
 	}
-
-
-	return(0);
+	return 0;
 }
 
 LRESULT CALLBACK
-WindowCallback(HWND window,
-UINT msg,
-WPARAM wParam,
-LPARAM lParam) {
+WindowCallback(HWND window, UINT message, WPARAM wParam, LPARAM lParam) 
+{
 	LRESULT result = 0;
-	switch (msg)
+	switch (message)
 	{
 		case WM_DESTROY:
 		{
@@ -157,11 +187,11 @@ LPARAM lParam) {
 
 		default:
 		{
-			result = DefWindowProc(window, msg, wParam, lParam);
+			result = DefWindowProc(window, message, wParam, lParam);
 			//            OutputDebugStringA("default\n");
 		} break;
 		
 		return result;
 	}
-	return DefWindowProc(window, msg, wParam, lParam);
+	return DefWindowProc(window, message, wParam, lParam);
 }
