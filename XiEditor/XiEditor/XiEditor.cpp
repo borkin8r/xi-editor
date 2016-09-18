@@ -127,15 +127,13 @@ WinMain(HINSTANCE instance, HINSTANCE prevInstance,
 			OutputDebugStringA("failed to create core connection\n");
 			return -2;
 		}
-		char uiMessage[256] = "{\"id\":0, \"method\": \"new_tab\",\"params\":[]}";
+		char uiMessage[256] = "{\"id\":0, \"method\": \"new_tab\",\"params\":[]}\n"; //NOTE: Messages to core must be appended with a new line
 		DWORD uiMessageSize = sizeof(uiMessage);
 		DWORD uiBytesWritten = 0;
 
 		if (WriteFile(coreInputWriteEnd, uiMessage, strlen(uiMessage), &uiBytesWritten, NULL) == 0) {
 			DWORD e = GetLastError();
 		}
-
-		CloseHandle(coreInputWriteEnd);
 
 		char coreMessage[256] = "";
 		DWORD coreMessageSize = sizeof(uiMessage);
@@ -158,7 +156,7 @@ WinMain(HINSTANCE instance, HINSTANCE prevInstance,
 			TranslateMessage(&message);
 			DispatchMessage(&message);
 		}
-
+		//CloseHandle(coreOutputReadEnd);
 		ExitProcess(0);
 	}
 	return 0;
