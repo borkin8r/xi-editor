@@ -3,7 +3,10 @@
 
 #include "XiEditor.h"
 
+typedef char* (*RPCCallback)();
 LRESULT CALLBACK WindowCallback(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam);
+void SendRPCAsync(char* method, char* params, RPCCallback callback);
+char* DefaultCallback();
 
 /////////////////////
 // Globals
@@ -30,16 +33,15 @@ WinMain(HINSTANCE instance, HINSTANCE prevInstance,
 	if (RegisterClassA(&windowClass))
 	{
 		HWND window = CreateWindowExA(
-			0,                              // Optional window styles.
-			windowClass.lpszClassName,                     // Window class
-			"Xi-Editor text",     // Window text
-			WS_OVERLAPPEDWINDOW | WS_VISIBLE, // Window style
-			// Size and position
-			CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT,
-			NULL,       // Parent window    
-			NULL,       // Menu
-			instance,  // Instance handle
-			NULL        // Additional application data
+			0,															// Optional window styles.
+			windowClass.lpszClassName,									 // Window class
+			"Xi-Editor text",											// Window text
+			WS_OVERLAPPEDWINDOW | WS_VISIBLE,							// Window style
+			CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, // Size and position
+			NULL,														// Parent window    
+			NULL,														// Menu
+			instance,													// Instance handle
+			NULL														// Additional application data
 			);
 
 		if (window == NULL)
@@ -55,10 +57,10 @@ WinMain(HINSTANCE instance, HINSTANCE prevInstance,
 		//TODO: zero memory?
 		coreProcInfo = { 0 };
 		startInfo = { 0 };
-		coreInputWriteEnd = NULL;
-		coreInputReadEnd = NULL;
-		coreOutputWriteEnd = NULL;
-		coreOutputReadEnd = NULL;
+		coreInputWriteEnd = NULL; //lose inheritance
+		coreInputReadEnd = NULL; //thread lock
+		coreOutputWriteEnd = NULL; //thread lock
+		coreOutputReadEnd = NULL; //lose inheritance
 		SECURITY_ATTRIBUTES securityAttributes;
 
 		securityAttributes.nLength = sizeof(SECURITY_ATTRIBUTES);
@@ -112,40 +114,25 @@ WinMain(HINSTANCE instance, HINSTANCE prevInstance,
 
 		coreProcessStarted = CreateProcess(
 			"..\\..\\rust\\target\\debug\\xi-core.exe",		   // path to executable "xi-core",
-			NULL,		   // command line arguements
-			NULL,          // process security attributes 
-			NULL,          // primary thread security attributes 
-			TRUE,          // handles are inherited 
-			CREATE_NO_WINDOW,             // creation flags 
-			NULL,          // use parent's environment 
-			NULL,          // use parent's current directory 
-			&startInfo,    // STARTUPINFO pointer 
-			&coreProcInfo);    // receives PROCESS_INFORMATION
-
+			NULL,												// command line arguements
+			NULL,												// process security attributes 
+			NULL,												// primary thread security attributes 
+			TRUE,												// handles are inherited 
+			CREATE_NO_WINDOW,									// creation flags 
+			NULL,												// use parent's environment 
+			NULL,												// use parent's current directory 
+			&startInfo,											// STARTUPINFO pointer 
+			&coreProcInfo);										// receives PROCESS_INFORMATION
 		if (!coreProcessStarted) {
 			DWORD error = GetLastError();
 			OutputDebugStringA("failed to create core connection\n");
 			return -2;
 		}
-		char uiMessage[256] = "{\"id\":0, \"method\": \"new_tab\",\"params\":[]}\n"; //NOTE: Messages to core must be appended with a new line
-		DWORD uiMessageSize = sizeof(uiMessage);
-		DWORD uiBytesWritten = 0;
 
-		if (WriteFile(coreInputWriteEnd, uiMessage, strlen(uiMessage), &uiBytesWritten, NULL) == 0) {
-			DWORD e = GetLastError();
-		}
+		SendRPCAsync("new_tab", "", &DefaultCallback);
 
-		char coreMessage[256] = "";
-		DWORD coreMessageSize = sizeof(uiMessage);
-		DWORD coreBytesRead = 0;
-
-		ReadFile(coreOutputReadEnd, coreMessage, sizeof(coreMessage) - 1, &coreBytesRead, NULL);
-
-		//remove if handles to process and primary thread are needed
-		//CloseHandle(coreProcInfo.hProcess);
-		//CloseHandle(coreProcInfo.hThread);
-
-
+		
+		
 
 		///////////////////////////
 		// Run the message loop.
@@ -160,6 +147,31 @@ WinMain(HINSTANCE instance, HINSTANCE prevInstance,
 		ExitProcess(0);
 	}
 	return 0;
+}
+
+void 
+SendRPCAsync(char* method, char* params, RPCCallback callback) //TODO: pass params to uiMessage, call CreateThread to do the work
+{
+	////////////////////////////////////////
+	//refactor out to thread messaging code
+	char uiMessage[256] = "{\"id\":0, \"method\": \"new_tab\",\"params\":[]}\n"; //NOTE: Messages to core must be appended with a new line
+	DWORD uiMessageSize = sizeof(uiMessage);
+	DWORD uiBytesWritten = 0;
+
+	if (WriteFile(coreInputWriteEnd, uiMessage, strlen(uiMessage), &uiBytesWritten, NULL) == 0) {
+		DWORD e = GetLastError();
+	}
+}
+
+char*
+DefaultCallback() //TODO: heap allocate message buffers and pass around
+{
+	char coreMessage[256] = "";
+	DWORD coreMessageSize = sizeof(coreMessage);
+	DWORD coreBytesRead = 0;
+
+	ReadFile(coreOutputReadEnd, coreMessage, sizeof(coreMessage) - 1, &coreBytesRead, NULL);
+	return "DEADBEEF";
 }
 
 LRESULT CALLBACK
