@@ -4,3 +4,6 @@ Debug/
 *.opensdf
 *.sdf
 *.v12.suo
+.vs/
+*.VC.db
+*.swp

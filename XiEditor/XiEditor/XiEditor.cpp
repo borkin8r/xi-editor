@@ -129,10 +129,15 @@ WinMain(HINSTANCE instance, HINSTANCE prevInstance,
 			return -2;
 		}
 
-		SendRPCAsync("new_tab", "", &DefaultCallback);
+		///////////////////
+		//create send message array
+		UINT32 maxSendMessages = 100;
+		char** sendMessageQueue = (char**) malloc(sizeof(char*) * maxSendMessages); //TODO: free?
 
-		
-		
+
+
+
+		SendRPCAsync("new_tab", "", &DefaultCallback);
 
 		///////////////////////////
 		// Run the message loop.
@@ -142,6 +147,7 @@ WinMain(HINSTANCE instance, HINSTANCE prevInstance,
 		{
 			TranslateMessage(&message);
 			DispatchMessage(&message);
+			Sleep(1000);
 		}
 		//CloseHandle(coreOutputReadEnd);
 		ExitProcess(0);
