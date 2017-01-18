@@ -132,12 +132,15 @@ WinMain(HINSTANCE instance, HINSTANCE prevInstance,
 		///////////////////
 		//create send message array
 		UINT32 maxSendMessages = 100;
+		UINT32 maxMessageSize = 1000;
 		char** sendMessageQueue = (char**) malloc(sizeof(char*) * maxSendMessages); //TODO: free?
+		for (int i = 0; i < maxSendMessages; i++) {
+			sendMessageQueue[i] = (char*)calloc(maxMessageSize, sizeof(char));
+		}
 
 
 
-
-		SendRPCAsync("new_tab", "", &DefaultCallback);
+		CreateNewTab();
 
 		///////////////////////////
 		// Run the message loop.
@@ -155,8 +158,28 @@ WinMain(HINSTANCE instance, HINSTANCE prevInstance,
 	return 0;
 }
 
+void
+CreateNewTab() {
+	////////////////
+	//fill buffer with json message "new_tab", ""
+
+	//SendCoreMessageAsync(const messageBuffer)
+}
+
+void
+SendCoreMessageAsync(char* messageBuffer) { //TODO: always null terminate buffer
+	CreateThread(
+		NULL,                   // default security attributes
+		0,                      // use default stack size  
+		SendRPCAsync,       // thread function name
+		messageBuffer,          // argument to thread function 
+		0,                      // use default creation flags 
+		&dwThreadIdArray[i]);   // returns the thread identifier 
+
+}
+
 void 
-SendRPCAsync(char* method, char* params, RPCCallback callback) //TODO: pass params to uiMessage, call CreateThread to do the work
+SendRPCAsync(char* data, RPCCallback callback) //TODO: pass params to uiMessage, call CreateThread to do the work
 {
 	////////////////////////////////////////
 	//refactor out to thread messaging code
@@ -167,6 +190,7 @@ SendRPCAsync(char* method, char* params, RPCCallback callback) //TODO: pass para
 	if (WriteFile(coreInputWriteEnd, uiMessage, strlen(uiMessage), &uiBytesWritten, NULL) == 0) {
 		DWORD e = GetLastError();
 	}
+
 }
 
 char*

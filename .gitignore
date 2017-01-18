@@ -1,9 +1,8 @@
-xcuserdata/
-.DS_Store
 Debug/
 *.opensdf
 *.sdf
 *.v12.suo
 .vs/
 *.VC.db
+*.VC.VC.opendb
 *.swp
