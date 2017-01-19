@@ -4,9 +4,17 @@
 #include "XiEditor.h"
 
 typedef char* (*RPCCallback)();
+typedef unsigned long u64;
+typedef unsigned int u32;
+typedef unsigned short u16;
+typedef unsigned char u8;
+typedef long l64;
+typedef int i32;
+typedef short s16;
+typedef char c8;
 LRESULT CALLBACK WindowCallback(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam);
-void SendRPCAsync(char* method, char* params, RPCCallback callback);
-char* DefaultCallback();
+u64 SendRPCAsync(void* message);
+void CreateNewTab(u64* threadId);
 
 /////////////////////
 // Globals
@@ -139,8 +147,8 @@ WinMain(HINSTANCE instance, HINSTANCE prevInstance,
 		}
 
 
-
-		CreateNewTab();
+		u64 sendThreadID = 0;
+		CreateNewTab(&sendThreadID);
 
 		///////////////////////////
 		// Run the message loop.
@@ -158,50 +166,36 @@ WinMain(HINSTANCE instance, HINSTANCE prevInstance,
 	return 0;
 }
 
+
 void
-CreateNewTab() {
+CreateNewTab(u64* threadId) {
 	////////////////
 	//fill buffer with json message "new_tab", ""
-
-	//SendCoreMessageAsync(const messageBuffer)
-}
-
-void
-SendCoreMessageAsync(char* messageBuffer) { //TODO: always null terminate buffer
+	char newTabMessage[] = "{\"id\":0,\"method\":\"new_tab\",\"params\":[]}\n"; //TODO: create on heap!
+	
 	CreateThread(
 		NULL,                   // default security attributes
 		0,                      // use default stack size  
 		SendRPCAsync,       // thread function name
-		messageBuffer,          // argument to thread function 
+		newTabMessage,          // argument to thread function 
 		0,                      // use default creation flags 
-		&dwThreadIdArray[i]);   // returns the thread identifier 
-
+		threadId);   // returns the thread identifier
 }
 
-void 
-SendRPCAsync(char* data, RPCCallback callback) //TODO: pass params to uiMessage, call CreateThread to do the work
+u64 
+SendRPCAsync(void* data) //TODO: pass params to uiMessage, call CreateThread to do the work
 {
 	////////////////////////////////////////
 	//refactor out to thread messaging code
-	char uiMessage[256] = "{\"id\":0, \"method\": \"new_tab\",\"params\":[]}\n"; //NOTE: Messages to core must be appended with a new line
-	DWORD uiMessageSize = sizeof(uiMessage);
-	DWORD uiBytesWritten = 0;
+	char* uiMessage = (char*) data; //NOTE: Messages to core must be appended with a new line
+	u64 uiMessageSize = strlen(uiMessage); //NOTE: must be null terminated string
+	u64 uiBytesWritten = 0;
 
 	if (WriteFile(coreInputWriteEnd, uiMessage, strlen(uiMessage), &uiBytesWritten, NULL) == 0) {
-		DWORD e = GetLastError();
+		u64 e = GetLastError(); //TODO: handle error
+		
 	}
-
-}
-
-char*
-DefaultCallback() //TODO: heap allocate message buffers and pass around
-{
-	char coreMessage[256] = "";
-	DWORD coreMessageSize = sizeof(coreMessage);
-	DWORD coreBytesRead = 0;
-
-	ReadFile(coreOutputReadEnd, coreMessage, sizeof(coreMessage) - 1, &coreBytesRead, NULL);
-	return "DEADBEEF";
+	//TODO: free message from heap
 }
 
 LRESULT CALLBACK
